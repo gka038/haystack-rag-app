@@ -1,0 +1,14 @@
+{{- range .Values.persistentVolumeClaims }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .claimName | default $.Chart.Name }}
+  namespace: {{ $.Values.namespace }}
+spec:
+  accessModes:
+    - {{ .accessMode | default "ReadWriteOnce" }}
+  resources:
+    requests:
+      storage: {{ .storage | default "1Gi" }}
+---
+{{- end }}

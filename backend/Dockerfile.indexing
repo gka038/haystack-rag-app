@@ -1,17 +1,33 @@
-FROM python:3.12-slim
+# Use a lightweight base image for building dependencies
+FROM python:3.12-slim AS builder
 
 WORKDIR /app
 
-RUN apt-get update && \
-    apt-get install -y curl && \
-    rm -rf /var/lib/apt/lists/*
+# Install system dependencies required for building packages
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
 
+# Install dependencies in a separate stage to reduce final image size
 COPY requirements.txt .
+RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
-RUN pip install --no-cache-dir -r requirements.txt
+# Final runtime stage with a minimal base image
+FROM python:3.12-slim
 
+# Set a non-root user for security
+RUN groupadd -g 1000 appuser && useradd -m -g appuser -u 1000 appuser
+
+WORKDIR /app
+
+# Copy installed dependencies from builder stage
+COPY --from=builder /install /usr/local
+
+# Copy application code
 COPY src/common/ /app/common/
 COPY src/indexing/ /app/indexing/
+
+# Change ownership of the working directory and change user
+RUN chown -R appuser:appuser /app
+USER appuser
 
 EXPOSE 8001
 

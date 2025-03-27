@@ -1,0 +1,15 @@
+{{- if .Values.configMap }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Chart.Name }}
+data:
+  {{- range $key, $value := .Values.configMap }}
+  {{- if typeIs "string" $value | and (contains "\n" $value) }}
+  {{ $key }}: |
+    {{- $value | nindent 4 }}
+  {{- else }}
+  {{ $key }}: {{ $value | toString | quote }}
+  {{- end }}
+  {{- end }}
+{{- end }}

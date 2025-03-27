@@ -1,0 +1,204 @@
+hostname: &hostname empty-tools-tan.loca.lt
+opensearchPassword: &openpass your_password_here # change this before running
+openaiApiKey: &openaiApiKey sk-proj-xxxx # change this before running
+imageTag: &imageTag test1
+
+configMap:
+  OPENSEARCH_HOST: https://opensearch:9200
+  OPENSEARCH_USER: admin
+  GENERATOR: openai
+  USE_OPENAI_EMBEDDER: "false"
+  TOKENIZERS_PARALLELISM: "false"
+  LOG_LEVEL: DEBUG
+  HAYSTACK_LOG_LEVEL: DEBUG
+  INDEX_ON_STARTUP: "true"
+  PIPELINES_FROM_YAML: "false"
+
+indexing-service:
+  ports: 
+  - 8001
+  image: indexing
+  imageTag: *imageTag
+  configMap:
+    PYTHONUNBUFFERED: "1"
+  envFrom:
+  - configMapRef:
+      name: haystack-rag-masterchart
+  - configMapRef:
+      name: indexing-service
+  - secretRef:
+      name: haystack-rag-masterchart
+  persistentVolumeClaims:
+  - name: storage
+    mountPath: /app/files
+    hostPath: /Users/gkumar/data/storage
+  - name: pipelines
+    mountPath: /app/pipelines
+    hostPath: /Users/gkumar/data/pipelines
+  # resources:
+  #   requests:
+  #     cpu: 1
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: 8001
+    initialDelaySeconds: 30
+    periodSeconds: 60
+
+query-service:
+  image: query
+  imageTag: *imageTag
+  ports: 
+  - 8002
+  configMap:
+    PYTHONUNBUFFERED: "1"
+  envFrom:
+  - configMapRef:
+      name: haystack-rag-masterchart
+  - configMapRef:
+      name: query-service
+  - secretRef:
+      name: haystack-rag-masterchart
+  persistentVolumeClaims:
+  - name: storage
+    mountPath: /app/files
+    hostPath: /Users/gkumar/data/storage
+  - name: pipelines
+    mountPath: /app/pipelines
+    hostPath: /Users/gkumar/data/pipelines
+  # resources:
+  #   requests:
+  #     cpu: 1
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: 8002
+    initialDelaySeconds: 30
+    periodSeconds: 10
+
+frontend:
+  ports: 
+  - 3000
+  image: frontend
+  imageTag: *imageTag
+  configMapMountPath: /etc/nginx/conf.d
+  configMap:
+    default.conf: |
+      server {
+        listen 3000 default_server;
+        server_name _;
+        #server_name yourdomain.com;  # Replace with your actual domain
+
+        # Increase the maximum allowed body size
+        client_max_body_size 100M;
+
+        location = /api {
+          return 301 $scheme://$host:8080$request_uri;
+        }
+
+        location /api/ {
+          return 301 $scheme://$host:8080$request_uri;
+        }
+
+        location / {
+            root   /usr/share/nginx/html;
+            index  index.html index.htm;
+            try_files $uri $uri/ /index.html;
+        }
+
+        error_page   500 502 503 504  /50x.html;
+        location = /50x.html {
+          root   /usr/share/nginx/html;
+        }
+      }
+  livenessProbe:
+    httpGet:
+      path: /
+      port: 3000
+    initialDelaySeconds: 3
+    periodSeconds: 5
+    failureThreshold: 3
+  readinessProbe:
+    httpGet:
+      path: /
+      port: 3000
+    initialDelaySeconds: 3
+    periodSeconds: 5
+    failureThreshold: 3
+
+opensearch:
+  image: opensearchproject/opensearch
+  imageTag: 2.18.0
+  ports:
+  - 9200
+  - 9600
+  configMap:
+    discovery.type: "single-node"
+    bootstrap.memory_lock: "true"
+    OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
+  envFrom:
+  - configMapRef:
+      name: haystack-rag-masterchart
+  - configMapRef:
+      name: opensearch
+  - secretRef:
+      name: haystack-rag-masterchart
+  persistentVolumeClaims:
+  - name: opensearch
+    claimName: opensearch-pvc
+    mountPath: /usr/share/opensearch/data
+  readinessProbe:
+    exec:
+      command:
+        - /bin/sh
+        - -c
+        - 'curl -f --insecure -u "admin:${OPENSEARCH_PASSWORD}" https://localhost:9200/_cluster/health'
+    initialDelaySeconds: 30
+    periodSeconds: 10
+
+    
+nginx-ingress-controller:
+  fullnameOverride: nginx-ingress
+
+ingress:
+  hostname: *hostname
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "300s"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300s"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600s"
+    nginx.ingress.kubernetes.io/enable-underscores-in-headers: "true"
+    nginx.ingress.kubernetes.io/custom-http-errors: "500,502,503,504"
+  paths:
+    - path: /healthz
+      pathType: Exact
+      serviceName: nginx-ingress-default-backend
+      servicePort: 80
+    - path: /files
+      pathType: Prefix
+      serviceName: indexing-service
+      servicePort: 8001
+    - path: /search
+      pathType: Prefix
+      serviceName: query-service
+      servicePort: 8002
+    - path: /
+      pathType: Prefix
+      serviceName: frontend
+      servicePort: 3000
+
+persistentVolumeClaims:
+  # - name: storage
+  #   claimName: storage-pvc
+  #   storage: 10Gi
+  # - name: pipelines
+  #   claimName: pipelines-pvc
+  #   storage: 10Gi
+  - name: opensearch
+    claimName: opensearch-pvc
+    storage: 10Gi
+
+secret:
+  OPENAI_API_KEY: *openaiApiKey
+  OPENSEARCH_PASSWORD: *openpass
+  OPENSEARCH_INITIAL_ADMIN_PASSWORD: *openpass

@@ -1,0 +1,24 @@
+description: A master Helm chart created for demo
+name: haystack-rag-masterchart
+version: 1.0.0
+dependencies:
+- alias: indexing-service
+  name: helm-template
+  repository: file://../helm-template
+  version: 0.0.1
+- alias: query-service
+  name: helm-template
+  repository: file://../helm-template
+  version: 0.0.1
+- alias: frontend
+  name: helm-template
+  repository: file://../helm-template
+  version: 0.0.1
+- alias: opensearch
+  name: helm-template
+  repository: file://../helm-template
+  version: 0.0.1
+- alias: nginx-ingress-controller
+  name: nginx-ingress-controller
+  repository: oci://registry-1.docker.io/bitnamicharts
+  version: 11.6.12
